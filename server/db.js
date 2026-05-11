@@ -36,6 +36,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 fingerprint TEXT NOT NULL,
                 registered_at INTEGER NOT NULL
         )`);
+        db.run(`CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reg_number TEXT UNIQUE NOT NULL,
+        credential_id TEXT NOT NULL,
+        public_key TEXT NOT NULL,
+        counter INTEGER DEFAULT 0,
+        registered_at INTEGER NOT NULL
+        )`);
         db.run(`CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             token TEXT UNIQUE NOT NULL,

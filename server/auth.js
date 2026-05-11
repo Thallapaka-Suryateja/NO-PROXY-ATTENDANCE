@@ -2,6 +2,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('./db');
 const { v4: uuidv4 } = require('uuid');
+const {
+    generateRegistrationOptions,
+    verifyRegistrationResponse,
+    generateAuthenticationOptions,
+    verifyAuthenticationResponse
+} = require('@simplewebauthn/server');
 
 function generateBoardCode() {
     return String(Math.floor(1000 + Math.random() * 9000));
@@ -360,6 +366,179 @@ router.get('/api/reset-db', (req, res) => {
                 res.json({ success: true, message: 'All data cleared' });
             }
         });
+    });
+});
+
+// ─── WEBAUTHN REGISTRATION OPTIONS ───────────────────────────────────
+router.post('/api/webauthn/register-options', async (req, res) => {
+    const { reg_number, name } = req.body;
+    if (!reg_number || !name)
+        return res.status(400).json({ success: false, message: 'Missing fields' });
+
+    try {
+        const options = await generateRegistrationOptions({
+            rpName: 'Smart Attendance System',
+            rpID: 'no-proxy-attendance.onrender.com',
+            userID: new TextEncoder().encode(reg_number),
+            userName: reg_number,
+            userDisplayName: name,
+            attestationType: 'none',
+            authenticatorSelection: {
+                authenticatorAttachment: 'platform',
+                userVerification: 'required',
+                residentKey: 'preferred'
+            },
+            timeout: 60000,
+        });
+
+        // Store challenge temporarily in DB
+        db.run(
+            `INSERT INTO webauthn_credentials (reg_number, credential_id, public_key, counter, registered_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(reg_number) DO UPDATE SET
+             credential_id = 'pending',
+             public_key = ?`,
+            [reg_number, 'pending', JSON.stringify({ challenge: options.challenge }), 0, Date.now(), JSON.stringify({ challenge: options.challenge })],
+        );
+
+        res.json({ success: true, options });
+    } catch (err) {
+        console.error('WebAuthn register options error:', err);
+        res.status(500).json({ success: false, message: 'Failed to generate registration options' });
+    }
+});
+
+// ─── WEBAUTHN REGISTRATION VERIFY ────────────────────────────────────
+router.post('/api/webauthn/register-verify', async (req, res) => {
+    const { reg_number, response } = req.body;
+    if (!reg_number || !response)
+        return res.status(400).json({ success: false, message: 'Missing fields' });
+
+    db.get(`SELECT * FROM webauthn_credentials WHERE reg_number = ?`, [reg_number], async (err, row) => {
+        if (err || !row)
+            return res.status(400).json({ success: false, message: 'No pending registration' });
+
+        try {
+            const storedData = JSON.parse(row.public_key);
+            const expectedChallenge = storedData.challenge;
+
+            const verification = await verifyRegistrationResponse({
+                response,
+                expectedChallenge,
+                expectedOrigin: 'https://no-proxy-attendance.onrender.com',
+                expectedRPID: 'no-proxy-attendance.onrender.com',
+                requireUserVerification: true,
+            });
+
+            if (!verification.verified)
+                return res.status(400).json({ success: false, message: 'Fingerprint verification failed' });
+
+            const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
+
+            db.run(
+                `UPDATE webauthn_credentials SET
+                 credential_id = ?,
+                 public_key = ?,
+                 counter = ?
+                 WHERE reg_number = ?`,
+                [
+                    Buffer.from(credentialID).toString('base64'),
+                    Buffer.from(credentialPublicKey).toString('base64'),
+                    counter,
+                    reg_number
+                ],
+                (err) => {
+                    if (err) return res.status(500).json({ success: false, message: 'Failed to save credential' });
+                    res.json({ success: true, message: 'Fingerprint registered successfully' });
+                }
+            );
+        } catch (err) {
+            console.error('WebAuthn register verify error:', err);
+            res.status(500).json({ success: false, message: 'Registration verification failed' });
+        }
+    });
+});
+
+// ─── WEBAUTHN AUTHENTICATION OPTIONS ─────────────────────────────────
+router.post('/api/webauthn/auth-options', async (req, res) => {
+    const { reg_number } = req.body;
+    if (!reg_number)
+        return res.status(400).json({ success: false, message: 'Missing reg_number' });
+
+    db.get(`SELECT * FROM webauthn_credentials WHERE reg_number = ? AND credential_id != 'pending'`, [reg_number], async (err, row) => {
+        if (err || !row)
+            return res.status(400).json({ success: false, message: 'No fingerprint registered' });
+
+        try {
+            const options = await generateAuthenticationOptions({
+                rpID: 'no-proxy-attendance.onrender.com',
+                allowCredentials: [{
+                    id: Buffer.from(row.credential_id, 'base64'),
+                    type: 'public-key',
+                    transports: ['internal'],
+                }],
+                userVerification: 'required',
+                timeout: 60000,
+            });
+
+            // Save challenge temporarily
+            db.run(
+                `UPDATE webauthn_credentials SET public_key = ? WHERE reg_number = ?`,
+                [JSON.stringify({ challenge: options.challenge, publicKey: row.public_key, counter: row.counter }), reg_number]
+            );
+
+            res.json({ success: true, options });
+        } catch (err) {
+            console.error('WebAuthn auth options error:', err);
+            res.status(500).json({ success: false, message: 'Failed to generate auth options' });
+        }
+    });
+});
+
+// ─── WEBAUTHN AUTHENTICATION VERIFY ──────────────────────────────────
+router.post('/api/webauthn/auth-verify', async (req, res) => {
+    const { reg_number, response } = req.body;
+    if (!reg_number || !response)
+        return res.status(400).json({ success: false, message: 'Missing fields' });
+
+    db.get(`SELECT * FROM webauthn_credentials WHERE reg_number = ?`, [reg_number], async (err, row) => {
+        if (err || !row)
+            return res.status(400).json({ success: false, message: 'No credential found' });
+
+        try {
+            const storedData = JSON.parse(row.public_key);
+
+            const verification = await verifyAuthenticationResponse({
+                response,
+                expectedChallenge: storedData.challenge,
+                expectedOrigin: 'https://no-proxy-attendance.onrender.com',
+                expectedRPID: 'no-proxy-attendance.onrender.com',
+                authenticator: {
+                    credentialID: Buffer.from(row.credential_id, 'base64'),
+                    credentialPublicKey: Buffer.from(storedData.publicKey, 'base64'),
+                    counter: storedData.counter,
+                },
+                requireUserVerification: true,
+            });
+
+            if (!verification.verified)
+                return res.status(400).json({ success: false, message: 'Fingerprint not recognized' });
+
+            // Update counter
+            db.run(
+                `UPDATE webauthn_credentials SET public_key = ? WHERE reg_number = ?`,
+                [JSON.stringify({
+                    challenge: storedData.challenge,
+                    publicKey: storedData.publicKey,
+                    counter: verification.authenticationInfo.newCounter
+                }), reg_number]
+            );
+
+            res.json({ success: true, message: 'Fingerprint verified' });
+        } catch (err) {
+            console.error('WebAuthn auth verify error:', err);
+            res.status(500).json({ success: false, message: 'Authentication failed' });
+        }
     });
 });
 
