@@ -24,11 +24,18 @@ async function registerFingerprint(reg_number, name) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reg_number, name })
         });
-        const { options } = await optRes.json();
+        const optData = await optRes.json();
+alert('Options received: ' + JSON.stringify(Object.keys(optData)));
+const options = optData.options;
+if (!options) {
+    alert('No options returned from server');
+    return false;
+}
+alert('Challenge type: ' + typeof options.challenge + ' value: ' + options.challenge);
 
-        // Decode challenge
-        options.challenge = base64ToBuffer(options.challenge);
-        options.user.id = base64ToBuffer(options.user.id);
+// Decode challenge
+options.challenge = base64ToBuffer(options.challenge);
+options.user.id = base64ToBuffer(options.user.id);
 
         // Prompt fingerprint
         const credential = await navigator.credentials.create({ publicKey: options });
