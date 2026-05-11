@@ -55,6 +55,7 @@ async function registerFingerprint(reg_number, name) {
         return result.success;
     } catch (err) {
         console.error('Fingerprint registration error:', err);
+        alert('Registration error: ' + err.message);
         return false;
     }
 }
