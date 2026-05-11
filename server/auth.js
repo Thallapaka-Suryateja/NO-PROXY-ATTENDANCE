@@ -433,20 +433,20 @@ router.post('/api/webauthn/register-verify', async (req, res) => {
             if (!verification.verified)
                 return res.status(400).json({ success: false, message: 'Fingerprint verification failed' });
 
-            const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
+            const { credential } = verification.registrationInfo;
 
-            db.run(
-                `UPDATE webauthn_credentials SET
-                 credential_id = ?,
-                 public_key = ?,
-                 counter = ?
-                 WHERE reg_number = ?`,
-                [
-                    Buffer.from(credentialID).toString('base64'),
-                    Buffer.from(credentialPublicKey).toString('base64'),
-                    counter,
-                    reg_number
-                ],
+db.run(
+    `UPDATE webauthn_credentials SET
+     credential_id = ?,
+     public_key = ?,
+     counter = ?
+     WHERE reg_number = ?`,
+    [
+        Buffer.from(credential.id).toString('base64'),
+        Buffer.from(credential.publicKey).toString('base64'),
+        credential.counter,
+        reg_number
+    ],
                 (err) => {
                     if (err) return res.status(500).json({ success: false, message: 'Failed to save credential' });
                     res.json({ success: true, message: 'Fingerprint registered successfully' });
