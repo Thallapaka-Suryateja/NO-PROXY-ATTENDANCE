@@ -349,4 +349,18 @@ router.get('/api/check-proxy', (req, res) => {
     );
 });
 
+// ─── TEMP RESET ROUTE (remove after use) ─────────────────────────────
+router.get('/api/reset-db', (req, res) => {
+    const tables = ['attendance', 'location', 'sessions', 'device_fingerprints', 'classrooms', 'students', 'faculty'];
+    let done = 0;
+    tables.forEach(table => {
+        db.run(`DELETE FROM ${table}`, () => {
+            done++;
+            if (done === tables.length) {
+                res.json({ success: true, message: 'All data cleared' });
+            }
+        });
+    });
+});
+
 module.exports = router;
