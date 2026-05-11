@@ -480,10 +480,10 @@ router.post('/api/webauthn/auth-options', async (req, res) => {
             const options = await generateAuthenticationOptions({
                 rpID: 'no-proxy-attendance.onrender.com',
                 allowCredentials: [{
-                    id: Buffer.from(row.credential_id, 'base64'),
-                    type: 'public-key',
-                    transports: ['internal'],
-                }],
+    id: new Uint8Array(Buffer.from(row.credential_id, 'base64')),
+    type: 'public-key',
+    transports: ['internal'],
+}],
                 userVerification: 'required',
                 timeout: 60000,
             });
