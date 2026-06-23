@@ -477,16 +477,16 @@ router.post('/api/webauthn/auth-options', async (req, res) => {
 
         try {
             
-            const options = await generateAuthenticationOptions({
-                rpID: 'no-proxy-attendance.onrender.com',
-                allowCredentials: [{
-                    id: credIdBuffer,
-                    type: 'public-key',
-                    transports: ['internal'],
-                }],
-                userVerification: 'required',
-                timeout: 60000,
-            });
+           const options = await generateAuthenticationOptions({
+    rpID: 'no-proxy-attendance.onrender.com',
+    allowCredentials: [{
+        id: row.credential_id,
+        type: 'public-key',
+        transports: ['internal'],
+    }],
+    userVerification: 'required',
+    timeout: 60000,
+});
 
             db.run(
                 `UPDATE webauthn_credentials SET current_challenge = ? WHERE reg_number = ?`,
