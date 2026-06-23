@@ -15,63 +15,6 @@ async function getFingerprint() {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ─── WEBAUTHN REGISTRATION ────────────────────────────────────────────
-async function registerFingerprint(reg_number, name) {
-    try {
-        const optRes = await fetch('/api/webauthn/register-options', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reg_number, name })
-        });
-        const { options } = await optRes.json();
-        if (!options) {
-            alert('No options returned from server');
-            return false;
-        }
-
-        const attResp = await SimpleWebAuthnBrowser.startRegistration(options);
-
-        const verifyRes = await fetch('/api/webauthn/register-verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reg_number, response: attResp })
-        });
-        const result = await verifyRes.json();
-        return result.success;
-    } catch (err) {
-        console.error('Fingerprint registration error:', err);
-        alert('Registration error: ' + err.message);
-        return false;
-    }
-}
-
-// ─── WEBAUTHN AUTHENTICATION ──────────────────────────────────────────
-async function verifyFingerprint(reg_number) {
-    try {
-        const optRes = await fetch('/api/webauthn/auth-options', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reg_number })
-        });
-        if (!optRes.ok) return false;
-        const { options } = await optRes.json();
-        if (!options) return false;
-
-        const authResp = await SimpleWebAuthnBrowser.startAuthentication(options);
-
-        const verifyRes = await fetch('/api/webauthn/auth-verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reg_number, response: authResp })
-        });
-        const result = await verifyRes.json();
-        return result.success;
-    } catch (err) {
-        console.error('Fingerprint verification error:', err);
-        return false;
-    }
-}
-
 // ─── SET CLASSROOM LOCATION (faculty) ────────────────────────────────
 async function setClassroomLocation() {
     const classroom = document.getElementById('classroomId').value.trim();
@@ -134,24 +77,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (data.deviceRegistered) {
                     alert('Device registered successfully. This device is now linked to your account.');
-                }
-
-                if (role === 'student') {
-                    const checkRes = await fetch('/api/webauthn/auth-options', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ reg_number: identifier })
-                    });
-
-                    if (!checkRes.ok) {
-                        alert('Please scan your fingerprint to register it for attendance verification.');
-                        const registered = await registerFingerprint(identifier, username);
-                        if (registered) {
-                            alert('Fingerprint registered successfully.');
-                        } else {
-                            alert('Fingerprint registration failed or skipped.');
-                        }
-                    }
                 }
 
                 window.location.href = role === 'student'
@@ -282,12 +207,6 @@ async function markAttendance() {
     navigator.geolocation.getCurrentPosition(async (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
-
-        const fingerprintVerified = await verifyFingerprint(reg_number);
-        if (!fingerprintVerified) {
-            alert('Fingerprint verification failed. Attendance not marked.');
-            return;
-        }
 
         const fingerprint = await getFingerprint();
 
