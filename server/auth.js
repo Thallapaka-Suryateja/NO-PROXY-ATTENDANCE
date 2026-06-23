@@ -476,8 +476,7 @@ router.post('/api/webauthn/auth-options', async (req, res) => {
             return res.status(400).json({ success: false, message: 'No fingerprint registered' });
 
         try {
-            const credIdBuffer = new Uint8Array(Buffer.from(row.credential_id, 'base64'));
-
+            
             const options = await generateAuthenticationOptions({
                 rpID: 'no-proxy-attendance.onrender.com',
                 allowCredentials: [{
