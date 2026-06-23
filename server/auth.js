@@ -384,10 +384,11 @@ router.post('/api/webauthn/register-options', async (req, res) => {
             userDisplayName: name,
             attestationType: 'none',
             authenticatorSelection: {
-                authenticatorAttachment: 'platform',
-                userVerification: 'required',
-                residentKey: 'preferred'
-            },
+    authenticatorAttachment: 'platform',
+    userVerification: 'required',
+    residentKey: 'discouraged',
+    requireResidentKey: false
+},
             timeout: 60000,
         });
 
