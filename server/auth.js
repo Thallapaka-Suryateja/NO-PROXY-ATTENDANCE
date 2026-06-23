@@ -402,6 +402,8 @@ router.post('/api/webauthn/register-options', async (req, res) => {
                     console.error('Insert error:', err);
                     return res.status(500).json({ success: false, message: 'DB error saving challenge' });
                 }
+                console.log('OPTIONS KEYS:', Object.keys(options));
+                console.log('OPTIONS FULL:', JSON.stringify(options).substring(0, 200));
                 res.json({ success: true, options });
             }
         );
