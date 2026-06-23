@@ -18,46 +18,24 @@ async function getFingerprint() {
 // ─── WEBAUTHN REGISTRATION ────────────────────────────────────────────
 async function registerFingerprint(reg_number, name) {
     try {
-        // Get registration options from server
         const optRes = await fetch('/api/webauthn/register-options', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reg_number, name })
         });
-        const optData = await optRes.json();
-const options = optData.options;
-if (!options) {
-    alert('No options returned from server');
-    return false;
-}
+        const { options } = await optRes.json();
+        if (!options) {
+            alert('No options returned from server');
+            return false;
+        }
 
-// v13 returns challenge as base64url string — decode it
-options.challenge = base64ToBuffer(options.challenge);
-options.user.id = typeof options.user.id === 'string' 
-    ? base64ToBuffer(options.user.id)
-    : options.user.id;
+        const attResp = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options });
 
-        // Prompt fingerprint
-        const credential = await navigator.credentials.create({ publicKey: options });
-
-        // Send response to server
         const verifyRes = await fetch('/api/webauthn/register-verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                reg_number,
-                response: {
-                    id: credential.id,
-                    rawId: bufferToBase64(credential.rawId),
-                    response: {
-                        clientDataJSON: bufferToBase64(credential.response.clientDataJSON),
-                        attestationObject: bufferToBase64(credential.response.attestationObject),
-                    },
-                    type: credential.type,
-                }
-            })
+            body: JSON.stringify({ reg_number, response: attResp })
         });
-
         const result = await verifyRes.json();
         return result.success;
     } catch (err) {
@@ -70,69 +48,28 @@ options.user.id = typeof options.user.id === 'string'
 // ─── WEBAUTHN AUTHENTICATION ──────────────────────────────────────────
 async function verifyFingerprint(reg_number) {
     try {
-        // Get auth options from server
         const optRes = await fetch('/api/webauthn/auth-options', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reg_number })
         });
-
         if (!optRes.ok) return false;
         const { options } = await optRes.json();
+        if (!options) return false;
 
-        // Decode challenge and credential
-        options.challenge = base64ToBuffer(options.challenge);
-        options.allowCredentials = options.allowCredentials.map(cred => ({
-            ...cred,
-            id: base64ToBuffer(cred.id)
-        }));
+        const authResp = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
 
-        // Prompt fingerprint
-        const assertion = await navigator.credentials.get({ publicKey: options });
-
-        // Send response to server
         const verifyRes = await fetch('/api/webauthn/auth-verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                reg_number,
-                response: {
-                    id: assertion.id,
-                    rawId: bufferToBase64(assertion.rawId),
-                    response: {
-                        clientDataJSON: bufferToBase64(assertion.response.clientDataJSON),
-                        authenticatorData: bufferToBase64(assertion.response.authenticatorData),
-                        signature: bufferToBase64(assertion.response.signature),
-                        userHandle: assertion.response.userHandle
-                            ? bufferToBase64(assertion.response.userHandle)
-                            : null,
-                    },
-                    type: assertion.type,
-                }
-            })
+            body: JSON.stringify({ reg_number, response: authResp })
         });
-
         const result = await verifyRes.json();
         return result.success;
     } catch (err) {
         console.error('Fingerprint verification error:', err);
         return false;
     }
-}
-
-// ─── BASE64 HELPERS ───────────────────────────────────────────────────
-function base64ToBuffer(base64) {
-    const binary = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
-    const buffer = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) buffer[i] = binary.charCodeAt(i);
-    return buffer.buffer;
-}
-
-function bufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
 // ─── SET CLASSROOM LOCATION (faculty) ────────────────────────────────
@@ -191,41 +128,36 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await res.json();
             if (data.success) {
-    localStorage.setItem('reg_number', identifier);
-    localStorage.setItem('role', role);
-    localStorage.setItem('name', username);
+                localStorage.setItem('reg_number', identifier);
+                localStorage.setItem('role', role);
+                localStorage.setItem('name', username);
 
-    if (data.deviceRegistered) {
-        alert('Device registered successfully. This device is now linked to your account.');
-    }
+                if (data.deviceRegistered) {
+                    alert('Device registered successfully. This device is now linked to your account.');
+                }
 
-    // Register fingerprint for students on first login
-   // Register fingerprint for students
-if (role === 'student') {
-    // Check if fingerprint already registered
-    const checkRes = await fetch('/api/webauthn/auth-options', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reg_number: identifier })
-    });
+                if (role === 'student') {
+                    const checkRes = await fetch('/api/webauthn/auth-options', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ reg_number: identifier })
+                    });
 
-    if (!checkRes.ok) {
-        // No fingerprint registered yet — register now
-        alert('Please scan your fingerprint to register it for attendance verification.');
-        const registered = await registerFingerprint(identifier, username);
-        if (registered) {
-            alert('Fingerprint registered successfully.');
-        } else {
-            alert('Fingerprint registration failed or skipped.');
-        }
-    }
-    // If ok — fingerprint already registered, skip
-}
+                    if (!checkRes.ok) {
+                        alert('Please scan your fingerprint to register it for attendance verification.');
+                        const registered = await registerFingerprint(identifier, username);
+                        if (registered) {
+                            alert('Fingerprint registered successfully.');
+                        } else {
+                            alert('Fingerprint registration failed or skipped.');
+                        }
+                    }
+                }
 
-    window.location.href = role === 'student'
-        ? 'student_dashboard.html'
-        : 'faculty_dashboard.html';
-    } else {
+                window.location.href = role === 'student'
+                    ? 'student_dashboard.html'
+                    : 'faculty_dashboard.html';
+            } else {
                 alert(data.message);
             }
         } catch (err) {
@@ -348,17 +280,16 @@ async function markAttendance() {
         return alert('Geolocation not supported.');
 
     navigator.geolocation.getCurrentPosition(async (position) => {
-    const latitude = position.coords.latitude;
-    const longitude = position.coords.longitude;
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
 
-    // Verify fingerprint before submitting
-    const fingerprintVerified = await verifyFingerprint(reg_number);
-    if (!fingerprintVerified) {
-        alert('Fingerprint verification failed. Attendance not marked.');
-        return;
-    }
+        const fingerprintVerified = await verifyFingerprint(reg_number);
+        if (!fingerprintVerified) {
+            alert('Fingerprint verification failed. Attendance not marked.');
+            return;
+        }
 
-    const fingerprint = await getFingerprint();
+        const fingerprint = await getFingerprint();
 
         const res = await fetch('/api/mark-attendance', {
             method: 'POST',
