@@ -392,13 +392,11 @@ router.post('/api/webauthn/register-options', async (req, res) => {
         });
 
         db.run(
-            `INSERT INTO webauthn_credentials (reg_number, credential_id, public_key, current_challenge, counter, registered_at)
-             VALUES (?, 'pending', 'pending', ?, 0, ?)
-             ON CONFLICT(reg_number) DO UPDATE SET
-             credential_id = 'pending',
-             public_key = 'pending',
-             current_challenge = ?`,
-            [reg_number, options.challenge, Date.now(), options.challenge],
+    `INSERT INTO webauthn_credentials (reg_number, credential_id, public_key, current_challenge, counter, registered_at)
+     VALUES (?, 'pending', 'pending', ?, 0, ?)
+     ON CONFLICT(reg_number) DO UPDATE SET
+     current_challenge = excluded.current_challenge`,
+    [reg_number, options.challenge, Date.now()],
             (err) => {
                 if (err) {
                     console.error('Insert error:', err);
@@ -534,10 +532,11 @@ router.post('/api/webauthn/auth-verify', async (req, res) => {
             if (!verification.verified)
                 return res.status(400).json({ success: false, message: 'Fingerprint not recognized' });
 
-            db.run(
-                `UPDATE webauthn_credentials SET counter = ?, current_challenge = NULL WHERE reg_number = ?`,
-                [verification.authenticationInfo.newCounter, reg_number]
-            );
+           db.run(
+    `UPDATE webauthn_credentials SET counter = ?, current_challenge = NULL WHERE reg_number = ?`,
+    [verification.authenticationInfo.newCounter, reg_number],
+    (err) => { if (err) console.error('Counter update error:', err); }
+);
 
             res.json({ success: true, message: 'Fingerprint verified' });
         } catch (err) {
