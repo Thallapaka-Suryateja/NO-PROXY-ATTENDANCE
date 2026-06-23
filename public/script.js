@@ -29,7 +29,7 @@ async function registerFingerprint(reg_number, name) {
             return false;
         }
 
-        const attResp = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options });
+        const attResp = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options.publicKey ?? options });
 
         const verifyRes = await fetch('/api/webauthn/register-verify', {
             method: 'POST',
