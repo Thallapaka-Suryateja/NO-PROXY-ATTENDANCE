@@ -201,21 +201,31 @@ async function markAttendance() {
     if (!classroom || !boardCode || !sessionToken)
         return alert('Please fill all fields.');
 
-    if (!navigator.geolocation)
-        return alert('Geolocation not supported.');
+    // ── BLE scan ──
+    let rssi = null;
+    try {
+        const device = await navigator.bluetooth.requestDevice({
+            filters: [{ name: `CLASS-${classroom}` }]
+        });
+        rssi = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('BLE timeout — no signal received')), 8000);
+            device.addEventListener('advertisementreceived', (event) => {
+                clearTimeout(timeout);
+                resolve(event.rssi);
+            });
+            device.watchAdvertisements().catch(reject);
+        });
+    } catch (err) {
+        return alert('BLE scan failed — make sure Bluetooth is on and you are inside the classroom.\n' + err.message);
+    }
 
-    // BLE scan — Chrome Android only, skipped silently on all other browsers
-    // REPLACE with this — no popup, server just skips BLE check if null
-let bleToken = null, rssi = null;
-// BLE Web API requires a pairing popup — not suitable for silent attendance
-// L5 BLE is validated server-side via ESP32 token match only
-// Client just passes sessionToken prefix; server checks against beacon
-bleToken = sessionToken.substring(0, 16);
-rssi = -65; // default passing value — actual RSSI check is ESP32's job
+    if (rssi === null) return alert('Could not read BLE signal strength. Try again.');
+
+    // ── GPS + submit ──
+    if (!navigator.geolocation) return alert('Geolocation not supported.');
 
     navigator.geolocation.getCurrentPosition(async (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
+        const { latitude, longitude } = position.coords;
         const fingerprint = await getFingerprint();
 
         const res = await fetch('/api/mark-attendance', {
@@ -224,15 +234,13 @@ rssi = -65; // default passing value — actual RSSI check is ESP32's job
             body: JSON.stringify({
                 reg_number, latitude, longitude,
                 classroom, boardCode, sessionToken, fingerprint,
-                bleToken, rssi
+                rssi
             })
         });
 
         const data = await res.json();
         alert(data.message);
-    }, () => {
-        alert('Location access denied. Please allow location.');
-    });
+    }, () => alert('Location access denied. Please allow location.'));
 }
 
 // ─── VIEW ATTENDANCE (student) ───────────────────────────────────────
