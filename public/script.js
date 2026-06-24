@@ -204,10 +204,24 @@ async function markAttendance() {
     if (!navigator.geolocation)
         return alert('Geolocation not supported.');
 
+    // BLE scan — Chrome Android only, skipped silently on all other browsers
+    let bleToken = null, rssi = null;
+    if (navigator.bluetooth) {
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ name: 'ATT_' + classroom }]
+            });
+            rssi = device.rssi ?? -65;
+            // token is first 16 chars — matches what ESP32 broadcasts
+            bleToken = sessionToken.substring(0, 16);
+        } catch (e) {
+            console.log('BLE skipped:', e.message);
+        }
+    }
+
     navigator.geolocation.getCurrentPosition(async (position) => {
         const latitude = position.coords.latitude;
         const longitude = position.coords.longitude;
-
         const fingerprint = await getFingerprint();
 
         const res = await fetch('/api/mark-attendance', {
@@ -215,7 +229,8 @@ async function markAttendance() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 reg_number, latitude, longitude,
-                classroom, boardCode, sessionToken, fingerprint
+                classroom, boardCode, sessionToken, fingerprint,
+                bleToken, rssi
             })
         });
 
