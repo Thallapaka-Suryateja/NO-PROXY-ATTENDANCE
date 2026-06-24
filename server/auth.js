@@ -204,7 +204,7 @@ router.get('/api/active-session', (req, res) => {
 
 // ─── MARK ATTENDANCE ──────────────────────────────────────────────────
 router.post('/api/mark-attendance', (req, res) => {
-    const { reg_number, latitude, longitude, classroom, boardCode, sessionToken, fingerprint, bleToken, rssi } = req.body;
+    const { reg_number, latitude, longitude, classroom, boardCode, sessionToken, fingerprint, rssi } = req.body;
 
     if (!reg_number || !latitude || !longitude || !classroom || !boardCode || !sessionToken || !fingerprint)
         return res.status(400).json({ success: false, message: 'Missing fields' });
@@ -233,13 +233,12 @@ db.get(
         if (!session)
             return res.status(400).json({ success: false, message: 'No active session — time may have expired' });
 
-        // Step 1.5 — BLE proximity check (L5)
-        if (bleToken !== undefined && rssi !== undefined) {
-            if (bleToken !== session.token.substring(0, 16))
-                return res.status(400).json({ success: false, message: 'BLE token mismatch — wrong classroom beacon' });
-            if (rssi < -90)
-                return res.status(400).json({ success: false, message: `BLE signal too weak (${rssi} dBm) — move inside the classroom` });
-        }
+
+        // Step 1.5 — BLE proximity check (mandatory)
+if (rssi === undefined || rssi === null)
+    return res.status(400).json({ success: false, message: 'BLE signal missing — enable Bluetooth and try again' });
+if (rssi < -90)
+    return res.status(400).json({ success: false, message: `BLE signal too weak (${rssi} dBm) — move inside the classroom` });
 
                     // Step 2 — Validate board code
                     if (session.board_code !== boardCode)
