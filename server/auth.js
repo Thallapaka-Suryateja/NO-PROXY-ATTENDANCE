@@ -204,7 +204,7 @@ router.get('/api/active-session', (req, res) => {
 
 // ─── MARK ATTENDANCE ──────────────────────────────────────────────────
 router.post('/api/mark-attendance', (req, res) => {
-    const { reg_number, latitude, longitude, classroom, boardCode, sessionToken, fingerprint } = req.body;
+    const { reg_number, latitude, longitude, classroom, boardCode, sessionToken, fingerprint, bleToken, rssi } = req.body;
 
     if (!reg_number || !latitude || !longitude || !classroom || !boardCode || !sessionToken || !fingerprint)
         return res.status(400).json({ success: false, message: 'Missing fields' });
@@ -223,14 +223,23 @@ router.post('/api/mark-attendance', (req, res) => {
                 return res.status(400).json({ success: false, message: 'Wrong device. Please use your registered device.' });
 
             // Step 1 — Validate session
-            db.get(
-                `SELECT * FROM sessions
-                 WHERE token = ? AND classroom = ? AND is_active = 1 AND expiry_time > ?`,
-                [sessionToken, classroom, now],
-                (err, session) => {
-                    if (err) return res.status(500).json({ success: false, message: 'Database error' });
-                    if (!session)
-                        return res.status(400).json({ success: false, message: 'No active session — time may have expired' });
+           // Step 1 — Validate session
+db.get(
+    `SELECT * FROM sessions
+     WHERE token = ? AND classroom = ? AND is_active = 1 AND expiry_time > ?`,
+    [sessionToken, classroom, now],
+    (err, session) => {
+        if (err) return res.status(500).json({ success: false, message: 'Database error' });
+        if (!session)
+            return res.status(400).json({ success: false, message: 'No active session — time may have expired' });
+
+        // Step 1.5 — BLE proximity check (L5)
+        if (bleToken !== undefined && rssi !== undefined) {
+            if (bleToken !== session.token.substring(0, 16))
+                return res.status(400).json({ success: false, message: 'BLE token mismatch — wrong classroom beacon' });
+            if (rssi < -90)
+                return res.status(400).json({ success: false, message: `BLE signal too weak (${rssi} dBm) — move inside the classroom` });
+        }
 
                     // Step 2 — Validate board code
                     if (session.board_code !== boardCode)
